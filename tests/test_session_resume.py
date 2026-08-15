@@ -29,6 +29,16 @@ from claude_swap.session_resume import (
 )
 
 
+# The wire layer speaks AF_UNIX end to end: the listener fixture binds one and
+# send_peer_message connects one. Windows Python exposes no socket.AF_UNIX, so
+# on Windows these tests fail in the fixture before reaching the code under
+# test. Everything above the wire section is platform-neutral and still runs.
+requires_af_unix = pytest.mark.skipif(
+    not hasattr(socket, "AF_UNIX"),
+    reason="session-resume wire needs AF_UNIX, absent on Windows Python",
+)
+
+
 # --- real captured shapes ------------------------------------------------------
 
 # Terminal: the turn ended and only a new user turn restarts it.
@@ -270,6 +280,7 @@ def _listener(path: Path, received: list[bytes]):
     return thread
 
 
+@requires_af_unix
 def test_send_writes_auth_then_message_as_ndjson(tmp_path: Path, short_sock: Path):
     """The frame shape Claude Code's inbox expects: an auth frame carrying the
     peer token first, then the user-role message, newline-delimited."""
@@ -291,6 +302,7 @@ def test_send_writes_auth_then_message_as_ndjson(tmp_path: Path, short_sock: Pat
     assert frames[1]["msg_id"]
 
 
+@requires_af_unix
 def test_send_without_a_key_file_omits_the_auth_frame(tmp_path: Path, short_sock: Path):
     """Auth is optional on some platforms; the receiver decides. Sending a
     null token would be a malformed frame rather than an unauthenticated one."""
@@ -307,6 +319,7 @@ def test_send_without_a_key_file_omits_the_auth_frame(tmp_path: Path, short_sock
     assert frames[0]["type"] == "user"
 
 
+@requires_af_unix
 def test_send_to_a_dead_socket_reports_failure(tmp_path: Path):
     """A stale socket file outlives the process that bound it. The caller's
     alternative to a failed nudge is an un-resumed session, never a crash."""
@@ -314,6 +327,7 @@ def test_send_to_a_dead_socket_reports_failure(tmp_path: Path):
     assert not send_peer_message(str(dead), "hi", pid=1, claude_dir=tmp_path)
 
 
+@requires_af_unix
 def test_resume_reports_only_the_sessions_that_accepted(tmp_path: Path, short_sock: Path):
     sock_path = short_sock
     received: list[bytes] = []
